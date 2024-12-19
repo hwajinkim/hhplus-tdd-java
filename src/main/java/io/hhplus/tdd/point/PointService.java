@@ -8,6 +8,7 @@ import org.apache.coyote.BadRequestException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Service
@@ -17,9 +18,11 @@ public class PointService {
     private final PointHistoryTable pointHistoryTable;
     private final PointValidation pointValidation;
 
+    private  final ConcurrentHashMap<Long, ReentrantLock> lockMap = new ConcurrentHashMap<>();
+
     // ReentrantLock 생성자의 매개변수를 true 전달
     // => 가장 오래 기다린 쓰레드가 lock을 획득할 수 있게 공정(fair)하게 처리
-    private ReentrantLock lock = new ReentrantLock(true);
+    //private ReentrantLock lock = new ReentrantLock(true);
 
     private Long MAX_POINT = 1000L;
 
@@ -42,11 +45,14 @@ public class PointService {
     }
 
     public UserPoint patchPointCharge(long userId, long addAmount,long fixTime){
+        ReentrantLock lock = lockMap.computeIfAbsent(userId, id -> new ReentrantLock());
         // .lock() 메서드를 통해 락을 획득
         // .unlock()을 사용하여 하나의 스레드 실행 후엔 무조건 락을 해제하여 교착상태를 방지한다.
         // try-finally를 사용하여 예외가 발생해도 항상 unlock() 호출
-        lock.lock();
+
         try{
+            // 동일 사용자에 대해 동기화
+            lock.lock();
             pointValidation.validateUserId(userId);
             pointValidation.validateAmount(addAmount);
             UserPoint userPoint = userPointTable.selectById(userId);
@@ -63,13 +69,16 @@ public class PointService {
             pointHistoryTable.insert(userId, addAmount, TransactionType.CHARGE, fixTime);
             return updatedPoint;
         } finally {
-            lock.unlock();
+            lock.unlock(); // 락 해제
+            lockMap.remove(userId, lock); // 락 객체 정리
         }
     }
 
     public UserPoint patchPointUse(long userId, long reduceAmount, long fixedTime){
-        lock.lock();
+        ReentrantLock lock = lockMap.computeIfAbsent(userId, id -> new ReentrantLock());
+
         try{
+            lock.lock();
             pointValidation.validateUserId(userId);
             pointValidation.validateAmount(reduceAmount);
             UserPoint userPoint = userPointTable.selectById(userId);
@@ -87,7 +96,8 @@ public class PointService {
             pointHistoryTable.insert(userId, reduceAmount, TransactionType.USE, fixedTime);
             return updatedPoint;
         } finally {
-            lock.unlock();
+            lock.unlock(); // 락 해제
+            lockMap.remove(userId, lock); // 락 객체 정리
         }
     }
 }
