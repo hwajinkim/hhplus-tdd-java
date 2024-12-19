@@ -106,5 +106,39 @@ ReentrantLock을 사용하여 동시성을 제어한 결과
 * 같은 유저인 경우
   * 데이터를 읽는 시점, 쓰는 시점에 따라 데이터 정합성의 문제가 발생 가능하다.
   * 이 경우 동시성 제어가 필요하다.
-->  사용자 ID에 따라 동시성 제어를 하느냐, 하지 않느냐 구별해주기 위해서 ConcurrentHashMap을 사용하여 처리한다.
-    
+
+** 사용자 ID에 따라 동시성 제어를 하느냐, 하지 않느냐 구별해주기 위해서 ConcurrentHashMap을 사용하여 처리한다.
+
+### 리팩토링 구현 방식
+
+사용자 ID에 따라 lock을 적절하게 걸어주기 위해서는 ConcurrentHashMap을 사용하여 사용자별로 락 개체를 관리하게끔 하였다.
+
+```
+    public UserPoint patchPointCharge(long userId, long addAmount,long fixTime){
+	ReentrantLock lock = lockMap.computeIfAbsent(userId, id -> new ReentrantLock());
+
+        try{
+            // 동일 사용자에 대해 동기화
+            lock.lock();
+            // 충전 로직 ...
+        } finally {
+            lock.unlock(); // 락 해제
+            lockMap.remove(userId, lock); // 락 객체 정리
+        }
+    }
+```
+* ConcurrentHashMap
+	* 사용자별로 고유한 키(`userId`)를 맵에 저장하여 `ReentrantLock` 객체를 관리
+	* computeIfAbsent` 메서드를 사용해 필요할 때만 락을 생성
+* ReentrantLock
+	* 동일한 사용자 키에 대해 동기화 처리를 보장
+* 비동기 처리
+	* 다른 사용자는 각자의 락을 사용하기 때문에 서로 영향을 받지 않고 병렬 처리 가능
+
+### 최적화 후 스레드 처리 속도 비교
+
+* 동일한 사용자가 충전 요청을 10번 했을때 - 6 sec 343ms 발생
+<img width="1558" alt="스크린샷 2024-12-20 오전 2 19 53" src="https://github.com/user-attachments/assets/08aa1bf8-927a-414f-b21b-31a7b5c31d16" />
+
+* 다른 사용자가 충전 요청을 10번 했을때 - 5 sec  429ms 발생
+<img width="1591" alt="스크린샷 2024-12-20 오전 2 20 22" src="https://github.com/user-attachments/assets/66573a71-047c-4ba8-94b7-bf808e708a64" />
