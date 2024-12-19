@@ -4,19 +4,23 @@ import io.hhplus.tdd.database.PointHistoryTable;
 import io.hhplus.tdd.database.UserPointTable;
 import io.hhplus.tdd.point.UserPoint;
 import lombok.RequiredArgsConstructor;
+import org.apache.coyote.BadRequestException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 @RequiredArgsConstructor
 public class PointService {
     private final UserPointTable userPointTable;
     private final PointHistoryTable pointHistoryTable;
+    private final PointValidation pointValidation;
 
     private Long MAX_POINT = 1000L;
 
     public UserPoint getUserPoint(long userId){
+        pointValidation.validateUserId(userId);
         UserPoint userPoint = userPointTable.selectById(userId);
         if(userPoint == null){
             throw new IllegalArgumentException("해당 사용자 포인트 정보를 찾을 수 없습니다.");
@@ -25,6 +29,7 @@ public class PointService {
     }
 
     public List<PointHistory> getPointHistories(long userId){
+        pointValidation.validateUserId(userId);
         List<PointHistory> pointHistories = pointHistoryTable.selectAllByUserId(userId);
         if(pointHistories == null){
             throw new IllegalArgumentException("해당 사용자 포인트 내역을 찾을 수 없습니다.");
@@ -33,6 +38,8 @@ public class PointService {
     }
 
     public UserPoint patchPointCharge(long userId, long addAmount,long fixTime){
+        pointValidation.validateUserId(userId);
+        pointValidation.validateAmount(addAmount);
         UserPoint userPoint = userPointTable.selectById(userId);
         if(userPoint == null){
             throw new IllegalArgumentException("해당 사용자 포인트 정보를 찾을 수 없습니다.");
@@ -49,6 +56,8 @@ public class PointService {
     }
 
     public UserPoint patchPointUse(long userId, long reduceAmount, long fixedTime){
+        pointValidation.validateUserId(userId);
+        pointValidation.validateAmount(reduceAmount);
         UserPoint userPoint = userPointTable.selectById(userId);
         if(userPoint == null){
             throw new IllegalArgumentException("해당 사용자 포인트 정보를 찾을 수 없습니다.");
